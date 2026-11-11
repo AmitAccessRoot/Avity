@@ -537,8 +537,10 @@ class _HomePageState extends State<HomePage> {
                     ],
                   ),
                 ),
-                const SizedBox(width: 12),
-                ItemIcon(name: it.ic, color: pal.text),
+                if (it.ic.isNotEmpty) ...<Widget>[
+                  const SizedBox(width: 12),
+                  ItemIcon(name: it.ic, color: pal.text),
+                ],
               ],
             ),
           ),
