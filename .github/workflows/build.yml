@@ -1,0 +1,81 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Make sure icons folder exists
+        run: mkdir -p assets/icons
+
+      - name: Prepare Android project
+        run: |
+          if [ ! -d android ]; then
+            mkdir -p /tmp/keep
+            cp -r lib /tmp/keep/lib
+            cp pubspec.yaml /tmp/keep/pubspec.yaml
+            flutter create --org com.avity --project-name avity --platforms=android .
+            rm -rf lib
+            cp -r /tmp/keep/lib lib
+            cp /tmp/keep/pubspec.yaml pubspec.yaml
+          fi
+
+      - name: Set app name and package id
+        run: |
+          sed -i 's/android:label="[^"]*"/android:label="Avity"/' android/app/src/main/AndroidManifest.xml
+          for f in android/app/build.gradle android/app/build.gradle.kts; do
+            if [ -f "$f" ]; then
+              sed -i -E 's/applicationId[ =]+"[^"]*"/applicationId = "com.avity.com"/' "$f"
+            fi
+          done
+
+      - name: Use smaller Gradle download
+        run: |
+          f=android/gradle/wrapper/gradle-wrapper.properties
+          if [ -f "$f" ]; then
+            sed -i 's/-all\.zip/-bin.zip/' "$f"
+          fi
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/wrapper
+            ~/.gradle/caches
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties', 'android/**/*.gradle', 'android/**/*.kts', 'pubspec.yaml') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - run: flutter pub get
+
+      - name: Build APK (5 बार कोशिश करेगा)
+        run: |
+          for i in 1 2 3 4 5; do
+            if flutter build apk --release; then
+              exit 0
+            fi
+            echo "Build failed, retrying ($i/5)..."
+            sleep 30
+          done
+          exit 1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: avity-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
